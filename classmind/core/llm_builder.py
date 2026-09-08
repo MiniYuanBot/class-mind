@@ -48,8 +48,6 @@ _OUTPUT_BUDGET_MIN = 2600        # Draft 每批正文字数（汉字）下限
 _OUTPUT_BUDGET_FACTOR = 0.5      # 输出字数约按材料规模的该比例估算
 _OUTPUT_BUDGET_MAX = 9000
 
-_REVIEW_HEADINGS = ("FAQ", "易错点", "自测", "检查清单", "复习", "答疑", "常问", "错点", "checklist")
-
 
 @dataclass
 class PageUnit:
@@ -92,12 +90,14 @@ class LLMLayeredBuilder:
         client,
         polish: bool = False,
         skill_text: str = "",
+        skills=None,                      # list[Skill]（prompt 型按 stage 过滤注入）
     ) -> None:
         self.meta = meta
         self.orchestrator = orchestrator
         self.client = client
         self.polish = polish
         self.skill_text = (skill_text or "").strip()
+        self.skills = skills or []
 
     # ------------------------------------------------------------------
     def build(
@@ -176,12 +176,28 @@ class LLMLayeredBuilder:
 
     def _call(self, stage: str, variables: dict) -> str:
         prompt = self.orchestrator.render(stage, self.meta, variables)
-        if self.skill_text:
+        skills_md = self._skills_text(stage)
+        if skills_md:
+            # 标题不编序号：避免与 orchestrator 渲染的「一~七/附录」段号耦合。
             prompt += (
-                "\n\n## 八、用户提供的技能 / 补充要求（优先级最高，必须遵循）\n\n"
+                "\n\n## 用户技能与补充要求（User Skills — 优先级最高，必须遵循）\n\n"
+                + skills_md
+            )
+        elif self.skill_text:
+            prompt += (
+                "\n\n## 用户技能与补充要求（User Skills — 优先级最高，必须遵循）\n\n"
                 + self.skill_text
             )
         return self.client.complete(prompt)
+
+    def _skills_text(self, stage: str) -> str:
+        """按写作阶段过滤 prompt 型技能后拼接注入文本。"""
+        parts = [
+            f"### {sk.name}\n\n{sk.text}"
+            for sk in self.skills
+            if getattr(sk, "kind", "prompt") == "prompt" and sk.applies_to(stage)
+        ]
+        return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------

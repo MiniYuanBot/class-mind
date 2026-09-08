@@ -173,9 +173,6 @@ class PromptOrchestrator:
         return "\n\n---\n\n".join(chunks)
 
     # ------------------------------------------------------------------
-    def available_stages(self) -> list:
-        return list(self.catalog["stages"].keys())
-
     def describe(self, stage: Optional[str] = None) -> str:
         stages = self.catalog["stages"]
         if stage:

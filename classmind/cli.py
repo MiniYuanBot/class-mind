@@ -16,13 +16,18 @@ import sys
 from pathlib import Path
 
 from classmind import __version__
-from classmind.core.llm import LLMClient
+from classmind.core.llm import LLMClient, env_or
 from classmind.models import CourseMeta, CourseType
 from classmind.prompts.orchestrator import PromptOrchestrator
 
 
+def _vision_key_set() -> bool:
+    """视觉通道是否已配置 Key（KIMI_API_KEY 或兼容别名 CLASSMIND_VISION_API_KEY）。"""
+    return bool(env_or("KIMI_API_KEY", "CLASSMIND_VISION_API_KEY"))
+
+
 def main(argv: list | None = None) -> int:
-    # 优先从仓库根目录 / 工作目录的 .env 装载密钥（已被 gitignore；真实环境变量优先）
+    # 装载密钥：仓库根 config/.env（统一布局）→ 旧根 .env / cwd .env；真实环境变量优先
     from classmind.envfile import load as load_envfile
 
     load_envfile()
@@ -37,6 +42,8 @@ def main(argv: list | None = None) -> int:
             return _cmd_demo(args)
         if args.cmd == "prompts":
             return _cmd_prompts(args)
+        if args.cmd == "skills":
+            return _cmd_skills(args)
         if args.cmd == "version":
             print(f"classmind {__version__}")
             return 0
@@ -71,16 +78,18 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--file-stem", help="output note file stem, e.g. cs162-lecture2-notes (overrides auto naming)")
     g.add_argument("--type", dest="course_type", choices=[t.value for t in CourseType],
                    help="course type: theory / lab / tutorial / seminar")
-    g.add_argument("--api-key", help="LLM API key (or env CLASSMIND_API_KEY / repo-root .env)")
+    g.add_argument("--api-key", help="LLM API key (or env DEEPSEEK_API_KEY / repo-root config/.env)")
     g.add_argument("--base-url", help="LLM endpoint (default https://api.deepseek.com)")
     g.add_argument("--model", help="LLM model (default deepseek-chat)")
-    g.add_argument("--vision-key", help="Vision API key for slide-image captions, e.g. Kimi (or env CLASSMIND_VISION_API_KEY)")
+    g.add_argument("--vision-key", help="Vision API key for slide-image captions, e.g. Kimi (or env KIMI_API_KEY)")
     g.add_argument("--vision-base-url", help="Vision endpoint (default https://api.moonshot.cn/v1)")
     g.add_argument("--vision-model", help="Vision model (default kimi-k3, Moonshot /v1 endpoint)")
     g.add_argument("--skills", type=Path,
                    help="extra skill/requirements file or directory (or env CLASSMIND_SKILLS / input/skills/*.md)")
     g.add_argument("--prompt-dir", type=Path, help="custom prompt template directory (overrides built-in templates)")
     g.add_argument("--coverage-threshold", type=float, default=0.7, help="transcript coverage warning threshold (default 0.7)")
+    g.add_argument("--fix-rounds", type=int, default=0,
+                   help="QA revision loop: after assembly, feed machine-fixable QA issues back to the LLM up to N rounds (default 0 = off)")
     g.add_argument("--verbose", "-v", action="store_true", help="print more intermediate information")
 
     d = sub.add_parser("demo", help="generate a sample course package (optionally run the pipeline)")
@@ -91,9 +100,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("prompts", help="prompt catalog / preview (Prompt Transparency)")
     p.add_argument("action", choices=["list", "show"])
-    p.add_argument("stage", nargs="?", help="stage: plan / draft / polish")
+    p.add_argument("stage", nargs="?", help="stage: plan / draft / polish / fix")
     p.add_argument("--type", dest="course_type", default="theory", help="course type")
     p.add_argument("--prompt-dir", type=Path, help="custom prompt template directory")
+
+    s = sub.add_parser("skills", help="skill registry (list / show, kinds: prompt & tool)")
+    s.add_argument("action", choices=["list", "show"])
+    s.add_argument("name", nargs="?", help="skill name (for 'show')")
+    s.add_argument("--skills", type=Path, help="extra skill file/dir (same as generate --skills)")
 
     sub.add_parser("version", help="show version")
     return parser
@@ -117,9 +131,9 @@ def _cmd_generate(args) -> int:
     overrides = {k: v for k, v in overrides.items() if v is not None}
 
     llm_client = LLMClient(api_key=args.api_key, base_url=args.base_url, model=args.model)
-    # 视觉图注：显式给出 --vision-key 或设置了 CLASSMIND_VISION_API_KEY 时启用
+    # 视觉图注：显式给出 --vision-key 或已配置 KIMI_API_KEY 时启用
     captioner = None
-    if args.vision_key or os.environ.get("CLASSMIND_VISION_API_KEY"):
+    if args.vision_key or _vision_key_set():
         from classmind.vision.captioner import ImageCaptioner
 
         captioner = ImageCaptioner(
@@ -138,6 +152,7 @@ def _cmd_generate(args) -> int:
         verbose=args.verbose,
         captioner=captioner,
         skills=args.skills,
+        fix_rounds=args.fix_rounds,
     )
     result = pipeline.run()
     _print_summary(result, args)
@@ -156,7 +171,7 @@ def _cmd_demo(args) -> int:
     from classmind.pipeline import Pipeline
     from classmind.vision.captioner import ImageCaptioner
 
-    captioner = ImageCaptioner() if os.environ.get("CLASSMIND_VISION_API_KEY") else None
+    captioner = ImageCaptioner() if _vision_key_set() else None
     pipeline = Pipeline(
         input_dir=args.input_dir,
         output_dir=args.output_dir,
@@ -167,6 +182,43 @@ def _cmd_demo(args) -> int:
     )
     result = pipeline.run()
     _print_summary(result, args)
+    return 0
+
+
+def _cmd_skills(args) -> int:
+    """skill 注册表查看：list / show <name>。"""
+    from classmind.skills import find_repo_root, load_skills
+
+    skills = load_skills(args.skills, repo_root=find_repo_root())
+    if args.action == "list":
+        if not skills:
+            print("(no skills found — add SKILL.md under repo-root skills/ or pass --skills)")
+            return 0
+        for sk in skills:
+            extra = ""
+            if sk.kind == "tool":
+                extra = f"  hook={sk.hook or '-'}  entry={sk.entry or '-'}"
+            elif sk.stages:
+                extra = f"  stages={','.join(sk.stages)}"
+            print(f"[{sk.kind}] {sk.name}{extra}")
+            if sk.description:
+                print(f"      {sk.description}")
+            print(f"      source: {sk.source}")
+        return 0
+    # show
+    if not args.name:
+        print("[error] 'skills show' requires a skill name", file=sys.stderr)
+        return 1
+    sk = next((s for s in skills if s.name == args.name), None)
+    if sk is None:
+        print(f"[error] skill not found: {args.name}", file=sys.stderr)
+        return 1
+    print(f"== {sk.name}  [{sk.kind}] ==")
+    if sk.description:
+        print(f"description: {sk.description}")
+    print(f"source: {sk.source}")
+    print("---")
+    print(sk.body)
     return 0
 
 

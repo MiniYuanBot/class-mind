@@ -20,9 +20,9 @@ class TestPromptOrchestrator(unittest.TestCase):
         )
 
     def test_catalog_loaded(self):
-        self.assertEqual(self.orch.catalog["version"], "v2.0")
+        self.assertEqual(self.orch.catalog["version"], "v2.1")
         stages = self.orch.catalog["stages"]
-        for s in ("plan", "draft", "polish"):
+        for s in ("plan", "draft", "polish", "fix"):
             self.assertIn(s, stages)
         self.assertIn("markdown.md", self.orch.catalog.get("references", []))
 

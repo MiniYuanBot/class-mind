@@ -52,21 +52,6 @@ class CourseType(str, Enum):
         return alias.get(v)
 
 
-class FileKind(str, Enum):
-    """输入文件角色（P1）。"""
-
-    SLIDE = "slide"           # 课件 .pdf / .pptx
-    TRANSCRIPT = "transcript"  # 讲述 .docx / .txt / .md
-    ASSET = "asset"           # 辅助图片 .png / .jpg ...
-
-
-class Speaker(str, Enum):
-    TEACHER = "teacher"      # 教师讲解（笔记主干）
-    STUDENT = "student"      # 学生提问（保留为引用块）
-    DISCUSSION = "discussion"  # 课堂讨论（默认过滤）
-    UNKNOWN = "unknown"
-
-
 class Confidence(str, Enum):
     HIGH = "high"
     MEDIUM = "medium"
@@ -76,13 +61,6 @@ class Confidence(str, Enum):
 # ---------------------------------------------------------------------------
 # P1 输入网关产物
 # ---------------------------------------------------------------------------
-@dataclass
-class FileRecord:
-    path: Path
-    kind: FileKind
-    note: str = ""
-
-
 @dataclass
 class CourseMeta:
     """course_meta：课程名称、教师、章节/课时编号、学科领域、课程类型。"""
@@ -129,10 +107,6 @@ class Slide:
         title = f"## {self.title}" if self.title else f"## 第 {self.index} 页"
         body = self.body_md.strip()
         return f"{header}\n{title}\n\n{body}" if body else f"{header}\n{title}"
-
-    @property
-    def anchor(self) -> str:
-        return f'<!-- slide: id={self.index}, title="{self.title}" -->'
 
 
 @dataclass
@@ -208,19 +182,14 @@ class ProcessedTranscript:
 # ---------------------------------------------------------------------------
 @dataclass
 class AlignedChunk:
-    """对齐后的融合文本块：slide_id + transcript_seg + fused_content。"""
+    """对齐后的融合文本块：slide_id + transcript_seg + 讲述原文。"""
 
     slide_id: int
-    transcript_seg: int              # topic_segments 下标（0 起）；-1 表示无
+    transcript_seg: int              # topic_segments 下标（0 起）
     confidence: Confidence
     slide_title: str = ""
-    transcript_text: str = ""        # 对应讲述片段（原文引用）
-    fused_md: str = ""               # 融合后的 Markdown 块
+    transcript_text: str = ""        # 对应讲述片段（原文引用，下游写作素材源）
     signals: list = field(default_factory=list)  # 命中的对齐信号
-
-    def trace(self) -> str:
-        ts = ""
-        return f"[Slide {self.slide_id}{ts}]"
 
 
 @dataclass

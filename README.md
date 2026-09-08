@@ -41,7 +41,7 @@ classmind generate input output    # your own package:  handout + transcript -> 
 ```
 
 `demo` builds a small "machine-learning lecture" package (PPTX + DOCX + `meta.json`). Generation
-is **LLM-only** (no deterministic offline engine): you need the API key configured in `.env` (§2.7).
+is **LLM-only** (no deterministic offline engine): you need the API key configured in `config/.env` (§2.7).
 
 ### 2.2 Use your own lecture package
 
@@ -77,7 +77,7 @@ real writer:
 - Optional **L3 Polish** – whole-document consistency review (not run by default).
 
 ```powershell
-# Option A: keys in repo-root .env (auto-loaded, see §2.7) — no extra flags
+# Option A: keys in repo-root config/.env (auto-loaded, see §2.7) — no extra flags
 classmind generate input output
 
 # Option B: inline flags
@@ -95,9 +95,9 @@ Set a vision API key (any OpenAI-compatible multimodal endpoint — Moonshot Kim
 ClassMind captions each extracted figure in Chinese before alignment/drafting:
 
 ```powershell
-$env:CLASSMIND_VISION_API_KEY = "sk-..."                    # enables captions automatically
-$env:CLASSMIND_VISION_BASE_URL = "https://api.moonshot.cn/v1"  # optional (default)
-$env:CLASSMIND_VISION_MODEL = "kimi-k3"                     # optional (default; some keys need another model, see `GET /v1/models`)
+$env:KIMI_API_KEY = "sk-..."                               # enables captions automatically (alias CLASSMIND_VISION_API_KEY)
+$env:KIMI_BASE_URL = "https://api.moonshot.cn/v1"          # optional (default)
+$env:KIMI_MODEL = "kimi-k3"                                # optional (default; some keys need another model, see `GET /v1/models`)
 classmind generate input output
 ```
 
@@ -112,6 +112,25 @@ instructor preferences:
 - CLI: `classmind generate input output --skills .\my-rules.md` (file or folder)
 - env: `CLASSMIND_SKILLS=path1;path2` (OS path separator)
 - convention: put them in the input package under `input/skills/*.md`
+
+**Pluggable skills registry (v0.4+).** Skills may also live under repo-root `skills/<name>/SKILL.md`
+with `---` front matter:
+
+```markdown
+---
+name: teacher-style      # skill name
+kind: prompt             # prompt (injected into prompts, default) | tool (executed at a hook)
+stages: draft,polish     # prompt: which writing stages it applies to (default all)
+hook: enrich             # tool: pipeline hook (enrich = P2.6 material enrichment)
+entry: python3 x.py      # tool: command relative to the skill dir
+---
+<instructions body — for prompt-kind skills this is injected verbatim>
+```
+
+Inspect with `classmind skills list` / `classmind skills show <name>`. A `tool` skill with
+`hook: enrich` runs after P2 with `(input_dir, assets_dir)`; it may write images plus an optional
+`assets/figure_index.json` (`[{asset, page, caption}]`) that the pipeline merges into the matching
+slide. Tool failures degrade gracefully. Full spec: `skills/README.md`.
 
 ### 2.6 Inspect the output & run tests
 
@@ -134,21 +153,23 @@ course/chapter title → `course-<n>.md`.
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-### 2.7 Where API keys live (.env)
+### 2.7 Where API keys live (config/.env)
 
-Keys are **never** hard-coded or committed. Put them in a local `.env` at the repo root — the CLI
-auto-loads it (`classmind/envfile.py`), and real OS environment variables always win over `.env`:
+Keys are **never** hard-coded or committed. Put them in `config/.env` at the repo root — the CLI
+auto-loads it (`classmind/envfile.py`; legacy repo-root `.env` is still honored), and real OS
+environment variables always win over the file. **The variable names are shared with the sibling
+repo paper-mind**, so one `config/.env` can serve both tools:
 
 ```
-# .env (gitignored — see .env.example for the template)
-CLASSMIND_API_KEY=sk-...
-CLASSMIND_VISION_API_KEY=sk-...          # optional, for figure captions
-CLASSMIND_VISION_BASE_URL=https://api.moonshot.cn/v1
-CLASSMIND_VISION_MODEL=kimi-k3
+# config/.env (gitignored — copy from config/.env.example)
+DEEPSEEK_API_KEY=sk-...            # text LLM (aliases: CLASSMIND_API_KEY / OPENAI_API_KEY)
+KIMI_API_KEY=sk-...                # optional, figure captions (alias: CLASSMIND_VISION_API_KEY)
+KIMI_BASE_URL=https://api.moonshot.cn/v1
+KIMI_MODEL=kimi-k3
 ```
 
-`.env.example` (tracked) documents every variable. Equivalently, set the variables in your shell /
-system environment and skip `.env` entirely.
+`config/.env.example` (tracked) documents every variable. Equivalently, set the variables in your
+shell / system environment and skip the file entirely.
 
 ---
 
@@ -158,7 +179,8 @@ system environment and skip `.env` entirely.
 | :--- | :--- |
 | `classmind generate <in> <out>` | Zero-config pipeline over `<in>` into `<out>` |
 | `classmind demo [--run]` | Generate a sample package (optionally run the pipeline) |
-| `classmind prompts list` / `classmind prompts show <plan\|draft\|polish>` | Prompt catalog (Prompt Transparency) |
+| `classmind prompts list` / `classmind prompts show <plan\|draft\|polish\|fix>` | Prompt catalog (Prompt Transparency) |
+| `classmind skills list` / `classmind skills show <name>` | Pluggable skills registry (prompt & tool kinds) |
 | `classmind version` | Print version |
 
 ### `generate` options
@@ -168,11 +190,12 @@ system environment and skip `.env` entirely.
 | `--course-name`, `--instructor`, `--chapter-no`, `--chapter-title`, `--subject` | Override metadata auto-detection |
 | `--course-code`, `--lecture-date`, `--file-stem` | Control the English output file name (`--course-code cs162 --chapter-no 2` ⇒ `cs162-lecture2-notes.md`; `--file-stem` wins) |
 | `--type theory\|lab\|tutorial\|seminar` | Override course-type routing |
-| `--api-key`, `--base-url`, `--model` | LLM connection override (env / `.env`: `CLASSMIND_API_KEY`, `CLASSMIND_LLM_BASE_URL`, `CLASSMIND_LLM_MODEL`; completion size via `CLASSMIND_LLM_MAX_TOKENS`, default 8192) |
-| `--vision-key`, `--vision-base-url`, `--vision-model` | Optional slide-image captions (env `CLASSMIND_VISION_*`, Kimi-compatible by default) |
+| `--api-key`, `--base-url`, `--model` | LLM connection override (env / `config/.env`: `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`; completion size via `DEEPSEEK_MAX_TOKENS`, default 8192; legacy aliases `CLASSMIND_LLM_*`) |
+| `--vision-key`, `--vision-base-url`, `--vision-model` | Optional slide-image captions (env `KIMI_*`; legacy aliases `CLASSMIND_VISION_*`, Kimi-compatible by default) |
 | `--skills <file\|dir>` | Extra user requirements appended to prompts (env `CLASSMIND_SKILLS`, or `input/skills/*.md`) |
 | `--prompt-dir <dir>` | Override prompt templates (same file names; env `CLASSMIND_PROMPT_DIR`) |
 | `--coverage-threshold 0.7` | Transcript-coverage warning threshold |
+| `--fix-rounds N` | QA revision loop: after assembly, feed machine-fixable QA issues back to the LLM up to N rounds (default 0 = off; stage `fix`, see L4) |
 | `-v / --verbose` | More intermediate output |
 
 ### Course types
@@ -211,9 +234,9 @@ an empty/noise transcript is flagged.
 ```
 classmind/                  # Python package
 ├── cli.py                  # CLI entry point
-├── pipeline.py             # orchestrates P1..P7 (+ P2.5 vision captions)
+├── pipeline.py             # orchestrates P1..P7 (+ P2.5 vision captions, P2.6 skills, P7.5 QA-fix)
 ├── models.py               # dataclasses shared across stages
-├── skills.py               # user-skills loader (--skills / env / input/skills)
+├── skills.py               # skills registry (prompt & tool kinds; SKILL.md front matter)
 ├── gateway/                # P1 input gateway
 ├── parsing/                # P2 slide parser (pdf/pptx), P3 transcript processor
 ├── alignment/              # P4 multimodal alignment
@@ -221,13 +244,17 @@ classmind/                  # Python package
 ├── prompts/                # P5 orchestration code (templates live in repo-root prompts/)
 ├── core/                   # P6: LLM Plan→Draft builder + LLM client
 ├── generator/              # P7 note generator (assembly, naming, meta dump)
-├── quality/                # QA checks (headings / consistency / coverage / ...)
+├── quality/                # QA checks + L4 QA-fix revision loop (quality/fixer.py)
 └── demo.py                 # sample package generator (`classmind demo`)
 prompts/                    # ALL prompt assets
-├── catalog.json            # stage/type/pattern declarations (plan/draft/polish)
+├── catalog.json            # stage/type/pattern declarations (plan/draft/polish/fix)
 ├── templates/*.md          # universal role/input/output/hallucination, domain, layer tasks
 └── references/*.md         # markdown.md (format spec) + pseudocode.md
-.env / .env.example         # local API keys (ignored) + tracked template
+skills/                     # pluggable skills (SKILL.md + optional scripts) — see skills/README.md
+agent/AGENT.md              # agent definition (mirrored layout with paper-mind)
+WORKFLOW.md                 # stage detail + quality contract (mirrored layout)
+docs/ARCHITECTURE.md        # shared twin-repo architecture spec (kept in sync with paper-mind)
+config/.env(.example)      # local API keys (ignored) + tracked template — shared naming with paper-mind
 input/                      # your lecture package (gitignored except meta.json)
 output/                     # generated note + assets + meta (gitignored)
 tests/                      # unittest suite (workspace-scoped temp dirs)

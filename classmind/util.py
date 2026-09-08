@@ -149,21 +149,6 @@ def tokenize_keywords(text: str, top_k: int = 8) -> list:
     return out
 
 
-def english_terms(text: str) -> list:
-    """抽取疑似英文术语（首字母大写单词 / 括号内英文）。"""
-    found: list = []
-    for m in re.finditer(r"[A-Za-z][A-Za-z0-9\-]{1,}(?:\s+[A-Za-z][A-Za-z0-9\-]{1,})?", text):
-        w = m.group(0).strip()
-        if len(w) < 2 or w.lower() in STOPWORDS_EN:
-            continue
-        found.append(w)
-    seen: list = []
-    for w in found:
-        if w not in seen:
-            seen.append(w)
-    return seen[:12]
-
-
 def looks_like_formula_line(line: str) -> bool:
     """启发式：一行是否更像数学公式（而非散文）。"""
     s = line.strip()
@@ -173,14 +158,6 @@ def looks_like_formula_line(line: str) -> bool:
     has_equals = ("=" in s or "≈" in s or "≤" in s or "≥" in s or "<" in s or ">" in s)
     has_latin_dense = len(LATIN_WORD.findall(s)) >= 2
     return (math_chars >= 2 or (has_equals and has_latin_dense and len(s) < 140))
-
-
-def unwrap_paren_english(text: str) -> list:
-    """从「中文（English Term）」或「中文 (English Term)」中提取英文。"""
-    return [
-        m.group(1).strip()
-        for m in re.finditer(r"[（(]\s*([A-Za-z][A-Za-z0-9\s\-,.]{1,60}?)\s*[)）]", text)
-    ]
 
 
 def normalize_whitespace(text: str) -> str:

@@ -37,8 +37,6 @@ _TOPIC_CUES = (
     "好了，", "好的，", "那好", "这一节", "这节课我们",
 )
 
-STOP_SEGMENT = None
-
 
 class TranscriptProcessor:
     def __init__(self) -> None:

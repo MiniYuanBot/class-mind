@@ -1,5 +1,5 @@
 {
-  "version": "v2.0",
+  "version": "v2.1",
   "description": "ClassMind v2 提示词模板目录（Prompt Catalog）。生成模式：先由 L1 规划（Plan）产出整份笔记的结构计划（章节 + 页码范围），再由 L2 分节精写（Draft）逐批撰写正文，可选 L3 整篇审校（Polish）。模板文件位于 templates/ 下，参考规范位于 references/ 下；可通过 --prompt-dir 覆盖同名文件。",
   "references": ["markdown.md", "pseudocode.md"],
   "universal": {
@@ -38,6 +38,13 @@
       "label": "整篇审校（Polish & Verify）",
       "template": "layer_l3_polish.md",
       "description": "对整篇草稿做一致性审校：标题层级、术语统一、格式规范、补漏纠错，输出修订后的全文。",
+      "skip_references": false
+    },
+    "fix": {
+      "layer": "L4",
+      "label": "质检修订（QA Fix）",
+      "template": "layer_l4_fix.md",
+      "description": "按机器质检问题清单回喂修订：只修问题点，输出修复后的完整笔记全文（--fix-rounds N 启用）。",
       "skip_references": false
     }
   }

@@ -14,7 +14,7 @@ from classmind.alignment.aligner import Aligner
 from classmind.core.note_core import NoteCore
 from classmind.gateway.input_gateway import InputGateway, Manifest
 from classmind.generator.note_generator import NoteGenerator
-from classmind.models import AlignmentResult, NoteProduct, ParsedSlides, ProcessedTranscript
+from classmind.models import AlignmentResult, NoteProduct, ParsedSlides, ProcessedTranscript, dump_json
 from classmind.parsing.slide_parser import Slide2MDParser
 from classmind.parsing.transcript_processor import TranscriptProcessor
 from classmind.prompts.orchestrator import PromptOrchestrator
@@ -44,17 +44,20 @@ class Pipeline:
         verbose: bool = False,
         captioner=None,
         skills=None,
+        fix_rounds: int = 0,
     ) -> None:
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.overrides = overrides or {}
-        self.engine = engine or "llm"
+        self.engine = engine or "llm"       # 保留：legacy 参数，纯 LLM 模式固定为 llm
         self.llm_client = llm_client
         self.prompt_dir = Path(prompt_dir) if prompt_dir else None
         self.coverage_threshold = coverage_threshold
         self.verbose = verbose
         self.captioner = captioner          # 视觉图注（ImageCaptioner 或 None）
         self.skills = skills                # 技能来源（文件/目录/None）
+        self.fix_rounds = int(fix_rounds or 0)   # QA 修订闭环轮数（0=关闭）
+        self._skills_cache = None
 
     # ------------------------------------------------------------------
     def run(self) -> RunResult:
@@ -87,6 +90,8 @@ class Pipeline:
             self._log_issues(deck.warnings, phase="P2 Slide2MD")
             if self.captioner is not None:
                 self._caption_deck(deck, assets_dir)
+            # P2.6 素材富集：仓库根 skills/ 下声明 hook=enrich 的 tool 技能
+            self._enrich_from_skills(deck, assets_dir)
         else:
             result.slides = ParsedSlides()
             self._log_issues(["[WARN] 无课件，仅依据讲述生成笔记"], phase="P2 Slide2MD")
@@ -116,10 +121,10 @@ class Pipeline:
         meta = manifest.course_meta
         result.meta["course_meta"] = meta
         orchestrator = PromptOrchestrator(self.prompt_dir) if self.prompt_dir else PromptOrchestrator()
-        from classmind.skills import load_skill_text
+        skills = self._load_skills()
 
-        skill_text = load_skill_text(self.skills, input_dir=self.input_dir)
-        core = NoteCore(meta=meta, orchestrator=orchestrator, client=self.llm_client, skill_text=skill_text)
+        core = NoteCore(meta=meta, orchestrator=orchestrator, client=self.llm_client,
+                        skill_text="", skills=skills)
         product = core.build(result.slides, result.transcript, alignment)
         result.product = product
 
@@ -127,6 +132,23 @@ class Pipeline:
         generator = NoteGenerator(self.output_dir, coverage_threshold=self.coverage_threshold)
         outputs = generator.generate(meta, product, result.slides, result.transcript, alignment)
         result.outputs = outputs
+
+        # ---------- P7.5 质检修订闭环（--fix-rounds N） ----------
+        if self.fix_rounds and self.llm_client is not None and outputs.get("note_path"):
+            from classmind.quality.fixer import NoteFixer
+
+            fixer = NoteFixer(self.llm_client, orchestrator, skills=skills)
+            final_md, final_report = fixer.fix(
+                meta, outputs.get("note_md", ""),
+                result.slides, result.transcript, alignment, product,
+                rounds=self.fix_rounds,
+            )
+            if final_md != outputs.get("note_md"):
+                note_path = Path(outputs["note_path"])
+                note_path.write_text(final_md + "\n", encoding="utf-8")
+                outputs["note_md"] = final_md
+                outputs["qa_report"] = final_report
+                dump_json(final_report, self.output_dir / "meta" / "qa_report.json")
         return result
 
     # ------------------------------------------------------------------
@@ -155,6 +177,75 @@ class Pipeline:
             print(f"  [P2 Vision] 已为 {done} 页讲义生成图片语义描述。", file=sys.stderr)
         if skipped:
             print(f"  [P2 Vision] {skipped} 页含图但未能描述（图片缺失或 API 失败）。", file=sys.stderr)
+
+    # ------------------------------------------------------------------
+    def _load_skills(self) -> list:
+        """装载全部技能（来源去重）：--skills/env/input/skills + 仓库根 skills/。"""
+        if self._skills_cache is not None:
+            return self._skills_cache
+        from classmind.skills import find_repo_root, load_skills
+
+        self._skills_cache = load_skills(
+            self.skills,
+            input_dir=self.input_dir,
+            repo_root=find_repo_root(),
+        )
+        return self._skills_cache
+
+    # ------------------------------------------------------------------
+    def _enrich_from_skills(self, deck, assets_dir: Path) -> None:
+        """P2.6 素材富集：执行仓库根 skills/ 下声明 hook=enrich 的 tool 技能。
+
+        技能约定：入口以 (input_dir, assets_dir) 为参数运行；产物写入 assets_dir。
+        若额外写出 assets/figure_index.json：[{asset, page, caption}]，
+        则把对应图片引用/图注行并入第 page 页讲义正文（与 P2.5 图注同构）。
+        技能缺失/执行失败一律优雅降级（记录日志，不中断流水线）。
+        """
+        from classmind.skills import find_repo_root, load_tool_skills, run_tool_skill
+        from classmind.skills import SkillError as ToolSkillError
+
+        skills = load_tool_skills(find_repo_root(), hook="enrich")
+        if not skills:
+            return
+        slides_by_index = {s.index: s for s in deck.slides}
+        for sk in skills:
+            try:
+                run_tool_skill(sk, [str(self.input_dir), str(assets_dir)])
+            except ToolSkillError as exc:
+                print(f"  [P2.6 Skill] 技能 {sk.name} 执行失败（降级跳过）: {exc}", file=sys.stderr)
+                continue
+            except Exception as exc:  # noqa: BLE001
+                print(f"  [P2.6 Skill] 技能 {sk.name} 异常（降级跳过）: {exc}", file=sys.stderr)
+                continue
+            applied = self._apply_figure_index(slides_by_index, assets_dir)
+            print(f"  [P2.6 Skill] 技能 {sk.name} 完成，应用 {applied} 条图片富集。", file=sys.stderr)
+
+    @staticmethod
+    def _apply_figure_index(slides_by_index: dict, assets_dir: Path) -> int:
+        idx = assets_dir / "figure_index.json"
+        if not idx.exists():
+            return 0
+        import json as _json
+
+        try:
+            entries = _json.loads(idx.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return 0
+        applied = 0
+        for e in entries if isinstance(entries, list) else []:
+            asset = str(e.get("asset") or "")
+            page = int(e.get("page") or 0)
+            slide = slides_by_index.get(page)
+            if not asset or slide is None or not (assets_dir / asset).exists():
+                continue
+            caption = str(e.get("caption") or "").strip()
+            line = f"![{asset}](assets/{asset})"
+            if caption:
+                line = f"**{asset}**：{caption}（资源：assets/{asset}）"
+            if line not in slide.body_md:
+                slide.body_md = (slide.body_md.rstrip() + "\n\n" + line).strip()
+            applied += 1
+        return applied
 
     # ------------------------------------------------------------------
     @staticmethod

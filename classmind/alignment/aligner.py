@@ -58,9 +58,8 @@ def _tokens(text: str) -> set:
 
 
 class Aligner:
-    def __init__(self, coverage_threshold: float = 0.7, lookahead: int = 3) -> None:
+    def __init__(self, coverage_threshold: float = 0.7) -> None:
         self.coverage_threshold = coverage_threshold
-        self.lookahead = lookahead
 
     # ------------------------------------------------------------------
     def align(self, slides: ParsedSlides, transcript: ProcessedTranscript) -> AlignmentResult:
@@ -125,7 +124,6 @@ class Aligner:
                 confidence=conf,
                 slide_title=slide.title,
                 transcript_text=joined,
-                fused_md=_fuse(slide, joined),
                 signals=signals,
             )
             result.chunks.append(chunks)
@@ -201,17 +199,6 @@ def _gather_signals(texts: list, slide_id: int) -> list:
         if s not in out:
             out.append(s)
     return out or ["关键词匹配"]
-
-
-def _fuse(slide, teacher_text: str) -> str:
-    bullets = [ln for ln in (slide.raw_text.splitlines() or []) if ln.strip()][:8]
-    quote = teacher_text[:900] if teacher_text else ""
-    parts = ["**课件原文**："]
-    parts.append("- " + "\n- ".join(b.strip() for b in bullets) if bullets else "- （本页无可提取文本）")
-    parts.append("")
-    parts.append("**教师讲述**：")
-    parts.append(f"> {quote}" if quote else "> （本页无对应讲述展开）")
-    return "\n".join(parts)
 
 
 def _char_coverage(a: str, b: str) -> float:

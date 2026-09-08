@@ -1,9 +1,10 @@
 """LLM 客户端（OpenAI 兼容 Chat Completions）。
 
-通过环境变量 / 参数配置：
-  CLASSMIND_API_KEY / --api-key
-  CLASSMIND_LLM_BASE_URL / --base-url   （默认 https://api.deepseek.com，兼容任意 OpenAI 风格端点）
-  CLASSMIND_LLM_MODEL / --model         （默认 deepseek-chat）
+统一配置（与 paper-mind 同一套规范变量，Key 放仓库根 `config/.env`）：
+  DEEPSEEK_API_KEY / --api-key            （兼容别名：CLASSMIND_API_KEY / OPENAI_API_KEY）
+  DEEPSEEK_BASE_URL / --base-url          （默认 https://api.deepseek.com；别名 CLASSMIND_LLM_BASE_URL）
+  DEEPSEEK_MODEL / --model                （默认 deepseek-chat；别名 CLASSMIND_LLM_MODEL）
+  DEEPSEEK_MAX_TOKENS                     （别名 CLASSMIND_LLM_MAX_TOKENS，默认 8192）
 """
 
 from __future__ import annotations
@@ -43,19 +44,21 @@ class LLMClient:
         max_tokens: int = 8192,
         timeout: int = 180,
     ) -> None:
-        self.api_key = api_key or env_or("CLASSMIND_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY") or ""
-        self.base_url = (base_url or env_or("CLASSMIND_LLM_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
-        self.model = model or env_or("CLASSMIND_LLM_MODEL") or DEFAULT_MODEL
+        self.api_key = api_key or env_or("DEEPSEEK_API_KEY", "CLASSMIND_API_KEY", "OPENAI_API_KEY") or ""
+        self.base_url = (base_url or env_or("DEEPSEEK_BASE_URL", "CLASSMIND_LLM_BASE_URL")
+                         or DEFAULT_BASE_URL).rstrip("/")
+        self.model = model or env_or("DEEPSEEK_MODEL", "CLASSMIND_LLM_MODEL") or DEFAULT_MODEL
         self.temperature = temperature
         self.max_tokens = int(
             max_tokens
-            or env_or("CLASSMIND_LLM_MAX_TOKENS")
+            or env_or("DEEPSEEK_MAX_TOKENS", "CLASSMIND_LLM_MAX_TOKENS")
             or DEFAULT_MAX_TOKENS
         )
         self.timeout = timeout
         if not self.api_key:
             raise LLMError(
-                "未配置 API Key：请设置环境变量 CLASSMIND_API_KEY 或传入 --api-key"
+                "未配置 API Key：请设置环境变量 DEEPSEEK_API_KEY（或 CLASSMIND_API_KEY），"
+                "或把 Key 放入仓库根 config/.env（见 config/.env.example）"
             )
 
     # ------------------------------------------------------------------

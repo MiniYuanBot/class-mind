@@ -28,10 +28,11 @@ classmind_gen_*/
 # Local scratch files
 .tmp*/
 
-# Secrets / local env — keep .env.example tracked
+# Secrets / local env — keep config/.env.example tracked（与 paper-mind 统一布局）
+config/.env
 .env
 .env.*
-!.env.example
+!config/.env.example
 *.pem
 *.key
 

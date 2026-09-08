@@ -22,11 +22,13 @@ class NoteCore:
         orchestrator: PromptOrchestrator,
         client=None,
         skill_text: str = "",
+        skills=None,
     ) -> None:
         self.meta = meta
         self.orchestrator = orchestrator
         self.client = client
         self.skill_text = skill_text
+        self.skills = skills or []
 
     # ------------------------------------------------------------------
     def build(
@@ -37,8 +39,9 @@ class NoteCore:
     ) -> NoteProduct:
         if self.client is None:
             raise LLMError(
-                "ClassMind 需要 LLM API Key：请检查仓库根目录 .env（CLASSMIND_API_KEY）"
-                "或系统环境变量 / --api-key。（确定性离线引擎已移除，工具为纯 LLM 模式。）"
+                "ClassMind 需要 LLM API Key：请把 Key 放入仓库根 config/.env（DEEPSEEK_API_KEY，"
+                "模板见 config/.env.example）或设置系统环境变量 / 传 --api-key。"
+                "（确定性离线引擎已移除，工具为纯 LLM 模式。）"
             )
         return LLMLayeredBuilder(self.meta, self.orchestrator, self.client,
-                                 skill_text=self.skill_text).build(slides, transcript, alignment)
+                                 skill_text=self.skill_text, skills=self.skills).build(slides, transcript, alignment)

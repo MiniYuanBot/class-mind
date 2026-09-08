@@ -4,11 +4,12 @@
 **多模态** Chat Completions（如 Moonshot Kimi：base64 data URL 图片消息）
 为每张讲义图片生成简短中文语义描述，随后并入该页材料，供 Plan / Draft 使用。
 
-配置（均可选，未配置则自动跳过图片描述）：
-  CLASSMIND_VISION_API_KEY   必填，触发视觉功能
-  CLASSMIND_VISION_BASE_URL  默认 https://api.moonshot.cn
-  CLASSMIND_VISION_MODEL     默认 kimi-k3
+配置（均可选，未配置则自动跳过图片描述）——与 paper-mind 同一套规范变量：
+  KIMI_API_KEY             必填，触发视觉功能（兼容别名：CLASSMIND_VISION_API_KEY）
+  KIMI_BASE_URL            默认 https://api.moonshot.cn/v1（别名 CLASSMIND_VISION_BASE_URL）
+  KIMI_MODEL               默认 kimi-k3（别名 CLASSMIND_VISION_MODEL）
 命令行：generate --vision-key/--vision-base-url/--vision-model
+Key 文件：仓库根 config/.env（见 config/.env.example）
 """
 
 from __future__ import annotations
@@ -75,13 +76,16 @@ class ImageCaptioner:
         timeout: int = 120,
         temperature: float = 1.0,
     ) -> None:
-        self.api_key = api_key or _env_or("CLASSMIND_VISION_API_KEY") or ""
-        self.base_url = (base_url or _env_or("CLASSMIND_VISION_BASE_URL") or DEFAULT_VISION_BASE_URL).rstrip("/")
-        self.model = model or _env_or("CLASSMIND_VISION_MODEL") or DEFAULT_VISION_MODEL
+        self.api_key = api_key or _env_or("KIMI_API_KEY", "CLASSMIND_VISION_API_KEY") or ""
+        self.base_url = (base_url
+                         or _env_or("KIMI_BASE_URL", "CLASSMIND_VISION_BASE_URL")
+                         or DEFAULT_VISION_BASE_URL).rstrip("/")
+        self.model = model or _env_or("KIMI_MODEL", "CLASSMIND_VISION_MODEL") or DEFAULT_VISION_MODEL
         self.timeout = timeout
         self.temperature = temperature
         if not self.api_key:
-            raise VisionError("未配置视觉 API Key：设置 CLASSMIND_VISION_API_KEY 或 --vision-key")
+            raise VisionError("未配置视觉 API Key：设置 KIMI_API_KEY（或 CLASSMIND_VISION_API_KEY）"
+                              "或 --vision-key")
 
     def describe(self, image_path: Path, context: str = "", max_len: int = 160) -> str:
         """对单张图片生成中文描述；失败抛 VisionError（由调用方降级处理）。"""

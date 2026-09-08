@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "classmind"
-version = "0.3.0"
+version = "0.4.0"
 description = "ClassMind - end-to-end course note generator: slides + lecture transcript (optional vision captions & user skills) -> structured Chinese Markdown notes"
 readme = "README.md"
 requires-python = ">=3.10"

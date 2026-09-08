@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from classmind.errors import InputError
-from classmind.models import CourseMeta, CourseType, FileKind, FileRecord
+from classmind.models import CourseMeta, CourseType
 
 SLIDE_EXTS = {".pdf", ".pptx", ".ppt"}
 TRANSCRIPT_EXTS = {".docx", ".txt", ".md"}
@@ -88,7 +88,6 @@ class Manifest:
     transcripts: list = field(default_factory=list)     # list[Path]
     assets: list = field(default_factory=list)          # list[Path]
     ignored: list = field(default_factory=list)         # list[(Path, reason)]
-    records: list = field(default_factory=list)         # list[FileRecord]
     quality_issues: list = field(default_factory=list)
 
     @property
@@ -126,13 +125,6 @@ class InputGateway:
                 manifest.assets.append(path)
             else:
                 manifest.ignored.append((path, f"不支持的文件类型 {ext or '(无扩展名)'}"))
-
-        for p in manifest.slides:
-            manifest.records.append(FileRecord(p, FileKind.SLIDE))
-        for p in manifest.transcripts:
-            manifest.records.append(FileRecord(p, FileKind.TRANSCRIPT))
-        for p in manifest.assets:
-            manifest.records.append(FileRecord(p, FileKind.ASSET))
 
         manifest.course_meta = self._resolve_meta(manifest)
         self._quality_precheck(manifest)
