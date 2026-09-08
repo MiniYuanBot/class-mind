@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "classmind"
+version = "0.3.0"
+description = "ClassMind - end-to-end course note generator: slides + lecture transcript (optional vision captions & user skills) -> structured Chinese Markdown notes"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "ClassMind Team" }]
+keywords = ["notes", "lecture", "slides", "transcript", "markdown", "llm"]
+dependencies = []
+
+[project.optional-dependencies]
+pdf = ["PyMuPDF>=1.24"]
+pptx = ["python-pptx>=1.0"]
+docx = ["python-docx>=1.1"]
+images = ["Pillow>=10"]
+llm = ["requests>=2.31"]
+demo = ["PyMuPDF>=1.24", "python-pptx>=1.0", "python-docx>=1.1", "reportlab>=4"]
+full = [
+    "PyMuPDF>=1.24",
+    "python-pptx>=1.0",
+    "python-docx>=1.1",
+    "Pillow>=10",
+    "requests>=2.31",
+    "reportlab>=4",
+]
+
+[project.scripts]
+classmind = "classmind.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["classmind*"]
+
+[project.urls]
+Homepage = "https://example.invalid/classmind"

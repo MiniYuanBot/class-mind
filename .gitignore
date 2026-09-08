@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# ClassMind generated outputs (regenerable)
+output/
+output-demo/
+output-sample/
+input-sample/
+
+# Test scratch dirs (should self-clean; safety net)
+classmind_test_*/
+classmind_in_*/
+classmind_out_*/
+classmind_gw_*/
+classmind_pdf_*/
+classmind_pr_*/
+classmind_cli_*/
+classmind_sk_*/
+classmind_vis_*/
+classmind_gen_*/
+
+# Local scratch files
+.tmp*/
+
+# Secrets / local env — keep .env.example tracked
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Your real course materials: drop your lecture package under input/.
+# The material files themselves are not committed (private / copyrighted);
+# input/meta.json is kept as the schema example.
+input/*
+!input/meta.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,11 @@
+{
+  "course": "Sample Course（示例课程：请替换为真实课程名）",
+  "instructor": "Prof. Example",
+  "chapter_no": "1",
+  "chapter_title": "Lecture 1: Sample Chapter（示例章节，请替换）",
+  "subject": "Example Subject（示例学科，请替换）",
+  "course_type": "theory",
+  "course_code": "example",
+  "lecture_date": "",
+  "file_stem": ""
+}

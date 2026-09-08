@@ -1,0 +1,44 @@
+{
+  "version": "v2.0",
+  "description": "ClassMind v2 提示词模板目录（Prompt Catalog）。生成模式：先由 L1 规划（Plan）产出整份笔记的结构计划（章节 + 页码范围），再由 L2 分节精写（Draft）逐批撰写正文，可选 L3 整篇审校（Polish）。模板文件位于 templates/ 下，参考规范位于 references/ 下；可通过 --prompt-dir 覆盖同名文件。",
+  "references": ["markdown.md", "pseudocode.md"],
+  "universal": {
+    "role": "universal_role.md",
+    "input_declaration": "universal_input.md",
+    "output_declaration": "universal_output.md",
+    "hallucination_ban": "universal_hallucination.md"
+  },
+  "patterns": {
+    "figure_handling": "figure_handling.md",
+    "transcript_handling": "transcript_handling.md"
+  },
+  "course_types": {
+    "theory":    { "label": "理论课", "keywords": ["theorem", "definition", "proof", "derivation"], "template": "domain_theory.md" },
+    "lab":       { "label": "实验课", "keywords": ["experiment", "code", "implementation", "debugging"], "template": "domain_lab.md" },
+    "tutorial":  { "label": "习题课", "keywords": ["exercise", "solution", "common mistake", "trick"], "template": "domain_tutorial.md" },
+    "seminar":   { "label": "研讨课", "keywords": ["discussion", "critique", "state-of-the-art"], "template": "domain_seminar.md" }
+  },
+  "stages": {
+    "plan": {
+      "layer": "L1",
+      "label": "课程规划（Course Planning）",
+      "template": "layer_l1_plan.md",
+      "description": "通读全课材料，产出整份笔记的结构计划：有序章节标题 + 每章覆盖的讲义页码范围 + 文档标题，输出为可解析 JSON。",
+      "skip_references": true
+    },
+    "draft": {
+      "layer": "L2",
+      "label": "分节精写（Section Drafting）",
+      "template": "layer_l2_draft.md",
+      "description": "按结构计划逐批精写正文小节：合并相关讲义与教师口述，中文系统化书写，遵循 markdown.md 规范。",
+      "skip_references": false
+    },
+    "polish": {
+      "layer": "L3",
+      "label": "整篇审校（Polish & Verify）",
+      "template": "layer_l3_polish.md",
+      "description": "对整篇草稿做一致性审校：标题层级、术语统一、格式规范、补漏纠错，输出修订后的全文。",
+      "skip_references": false
+    }
+  }
+}
