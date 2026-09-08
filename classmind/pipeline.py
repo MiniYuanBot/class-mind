@@ -2,6 +2,11 @@
 
 串联 P1 -> P2/P3 -> P4 -> P5/P6 -> P7：
   input/  --> 解析/处理 --> 对齐 --> 提示词 --> 笔记 --> output/
+
+中间文件组织（与 paper-mind 镜像，见 docs/ARCHITECTURE.md）：
+  <work>/run/<stem>/     本次运行临时（run_state/manifest、slides.md、transcript、draft/、note_draft.md）
+  <work>/curated/<stem>/ 可复用快照（成功生成后落盘）
+  output/                最终交付：note + assets/ + meta/
 """
 
 from __future__ import annotations
@@ -10,11 +15,13 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from classmind import workdir as wd
 from classmind.alignment.aligner import Aligner
 from classmind.core.note_core import NoteCore
 from classmind.gateway.input_gateway import InputGateway, Manifest
 from classmind.generator.note_generator import NoteGenerator
-from classmind.models import AlignmentResult, NoteProduct, ParsedSlides, ProcessedTranscript, dump_json
+from classmind.models import (AlignmentResult, NoteProduct, ParsedSlides,
+                              ProcessedTranscript, dump_json, to_jsonable)
 from classmind.parsing.slide_parser import Slide2MDParser
 from classmind.parsing.transcript_processor import TranscriptProcessor
 from classmind.prompts.orchestrator import PromptOrchestrator
@@ -45,6 +52,7 @@ class Pipeline:
         captioner=None,
         skills=None,
         fix_rounds: int = 0,
+        work_dir: Path | None = None,
     ) -> None:
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
@@ -58,6 +66,10 @@ class Pipeline:
         self.skills = skills                # 技能来源（文件/目录/None）
         self.fix_rounds = int(fix_rounds or 0)   # QA 修订闭环轮数（0=关闭）
         self._skills_cache = None
+        # 中间文件根：显式 work_dir > env CLASSMIND_WORK_DIR > <output 父目录>/work
+        self.work_dir = Path(work_dir) if work_dir else wd.default_work_dir(self.output_dir)
+        self._run_dir: Path | None = None
+        self._curated_dir: Path | None = None
 
     # ------------------------------------------------------------------
     def run(self) -> RunResult:
@@ -72,6 +84,24 @@ class Pipeline:
             from classmind.errors import InputError
 
             raise InputError("输入中没有课件或讲述文本，无法生成笔记。")
+
+        # ---------- work/ 运行上下文（中间文件与 paper-mind 同构） ----------
+        meta = manifest.course_meta
+        result.meta["course_meta"] = meta
+        stem = wd.stem_for(meta)
+        import datetime as _dt
+
+        self._started_ts = _dt.datetime.now().isoformat(timespec="seconds")
+        self._curated_dir, self._run_dir = wd.dirs_for(self.work_dir, stem)
+        wd.reset_run(self._run_dir)
+        self._journal("manifest.json", lambda: dump_json(
+            to_jsonable(manifest), self._run_dir / "manifest.json"))
+        self._journal("run_state.json", lambda: dump_json({
+            "stem": stem, "input_dir": str(self.input_dir),
+            "output_dir": str(self.output_dir), "work_dir": str(self.work_dir),
+            "engine": self.engine or "llm", "fix_rounds": self.fix_rounds,
+            "started": self._started_ts,
+        }, self._run_dir / "run_state.json"))
 
         assets_dir = self.output_dir / "assets"
 
@@ -95,6 +125,8 @@ class Pipeline:
         else:
             result.slides = ParsedSlides()
             self._log_issues(["[WARN] 无课件，仅依据讲述生成笔记"], phase="P2 Slide2MD")
+        self._journal("slides.md", lambda: (self._run_dir / "slides.md").write_text(
+            (result.slides.slides_md or ""), encoding="utf-8"))
 
         # ---------- P3 讲述处理 ----------
         tp = TranscriptProcessor()
@@ -111,15 +143,24 @@ class Pipeline:
         else:
             result.transcript = ProcessedTranscript()
 
+        t = result.transcript
+        self._journal("transcript.txt", lambda: (self._run_dir / "transcript.txt").write_text(
+            (t.clean_text or ""), encoding="utf-8"))
+        self._journal("highlights.json", lambda: dump_json(
+            to_jsonable(t.highlights), self._run_dir / "highlights.json"))
+        if t.clean_md:
+            self._journal("transcript.md", lambda: (self._run_dir / "transcript.md").write_text(
+                t.clean_md, encoding="utf-8"))
+
         # ---------- P4 对齐 ----------
         aligner = Aligner(coverage_threshold=self.coverage_threshold)
         alignment = aligner.align(result.slides, result.transcript)
         result.alignment = alignment
         self._log_issues(alignment.warnings, phase="P4 Alignment")
+        self._journal("alignment.json", lambda: dump_json(
+            wd.alignment_payload(alignment), self._run_dir / "alignment.json"))
 
         # ---------- P5/P6 笔记核心 ----------
-        meta = manifest.course_meta
-        result.meta["course_meta"] = meta
         orchestrator = PromptOrchestrator(self.prompt_dir) if self.prompt_dir else PromptOrchestrator()
         skills = self._load_skills()
 
@@ -127,6 +168,17 @@ class Pipeline:
                         skill_text="", skills=skills)
         product = core.build(result.slides, result.transcript, alignment)
         result.product = product
+        # 落盘分节草稿（plan.json + draft/section_XX.md，排查/复用用）
+        self._journal("plan.json", lambda: wd.write_text_or_json(
+            product.layers.get("plan", ""), self._run_dir / "plan.json"))
+        draft_dir = self._run_dir / "draft"
+        for key, body in sorted(product.layers.items()):
+            if key == "plan" or not body:
+                continue
+            self._journal(f"draft/{key}.md", lambda k=key, b=body: (
+                draft_dir.mkdir(parents=True, exist_ok=True),
+                (draft_dir / f"{k}.md").write_text(b, encoding="utf-8"),
+            ))
 
         # ---------- P7 笔记生成 ----------
         generator = NoteGenerator(self.output_dir, coverage_threshold=self.coverage_threshold)
@@ -149,6 +201,29 @@ class Pipeline:
                 outputs["note_md"] = final_md
                 outputs["qa_report"] = final_report
                 dump_json(final_report, self.output_dir / "meta" / "qa_report.json")
+
+        # ---------- work/ 收尾：成稿副本 + run_state 终态 + curated 快照 ----------
+        self._journal("note_draft.md", lambda: (self._run_dir / "note_draft.md").write_text(
+            outputs.get("note_md", "") or "", encoding="utf-8"))
+        self._journal("run_state.json", lambda: dump_json({
+            "stem": stem, "input_dir": str(self.input_dir),
+            "output_dir": str(self.output_dir), "work_dir": str(self.work_dir),
+            "engine": product.engine or self.engine, "fix_rounds": self.fix_rounds,
+            "note": str(outputs.get("note_path", "")),
+            "started": self._started_ts,
+            "finished": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        }, self._run_dir / "run_state.json"), overwrite=True)
+        wd.write_curated_snapshot(
+            self._curated_dir, stem,
+            slides_md=(result.slides.slides_md or ""),
+            transcript_text=(result.transcript.clean_text or ""),
+            transcript_md=(result.transcript.clean_md or ""),
+            highlights=result.transcript.highlights,
+            alignment=result.alignment,
+            plan=product.layers.get("plan", ""),
+            meta=meta,
+        )
+        print(f"  [workdir] 中间产物: {self._run_dir}（草稿/状态）/ {self._curated_dir}（可复用快照）", file=sys.stderr)
         return result
 
     # ------------------------------------------------------------------
@@ -246,6 +321,37 @@ class Pipeline:
                 slide.body_md = (slide.body_md.rstrip() + "\n\n" + line).strip()
             applied += 1
         return applied
+
+    # ------------------------------------------------------------------
+    # work/ 中间文件（与 paper-mind 镜像；落盘失败不阻断生成）
+    # ------------------------------------------------------------------
+    def _journal(self, label: str, writer, overwrite: bool = False) -> None:
+        """执行一次中间产物落盘；失败仅提示。overwrite=True 允许覆盖已写文件。"""
+        try:
+            target = self._run_dir / label
+            if overwrite or not target.exists():
+                writer()
+        except OSError as exc:
+            print(f"  [workdir] 落盘失败（跳过）: {label} — {exc}", file=sys.stderr)
+
+    def cleanup(self) -> None:
+        """删除 work/run（保留 curated 与 output/）；与 paper-mind cleanup 语义一致。"""
+        removed = wd.cleanup(self.work_dir)
+        print(f"[cleanup] 已删除 {removed} 个 run 目录（{self.work_dir / 'run'}）；"
+              f"保留 curated/ 与 output/。")
+
+    def report(self) -> None:
+        print("\n--- input ---")
+        inp = Path(self.input_dir)
+        if inp.exists():
+            for f in sorted(inp.iterdir()):
+                print(f"  {f.name}")
+        print("--- output ---")
+        out = Path(self.output_dir)
+        if out.exists():
+            for f in sorted(out.iterdir()):
+                print(f"  {f.name}")
+        print(wd.describe(self.work_dir))
 
     # ------------------------------------------------------------------
     @staticmethod

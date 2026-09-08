@@ -143,6 +143,13 @@ output/
     ├── alignment_map.json     # slide <-> transcript mapping + coverage
     ├── highlights.json        # instructor emphasis points
     └── qa_report.json         # QA checks (headings / consistency / coverage / ...)
+
+# intermediates (regenerable; `classmind cleanup` clears run/, curated/ kept)
+work/
+├── run/<stem>/               # this-run artifacts: run_state/manifest, slides.md,
+│                             #   transcript(.txt/.md), highlights/alignment.json,
+│                             #   plan.json, draft/section_XX.md, note_draft.md
+└── curated/<stem>/           # reusable snapshot of the processed lecture
 ```
 
 File naming priority: `meta.json` `file_stem` (e.g. `cs162-lecture2-notes`) → `course_code` +
@@ -181,6 +188,8 @@ shell / system environment and skip the file entirely.
 | `classmind demo [--run]` | Generate a sample package (optionally run the pipeline) |
 | `classmind prompts list` / `classmind prompts show <plan\|draft\|polish\|fix>` | Prompt catalog (Prompt Transparency) |
 | `classmind skills list` / `classmind skills show <name>` | Pluggable skills registry (prompt & tool kinds) |
+| `classmind cleanup [--work-dir …]` | Remove `work/run` intermediates (keep `work/curated/` and `output/`) |
+| `classmind report [--input-dir …] [--output-dir …]` | Show input / output / work state |
 | `classmind version` | Print version |
 
 ### `generate` options
@@ -196,6 +205,7 @@ shell / system environment and skip the file entirely.
 | `--prompt-dir <dir>` | Override prompt templates (same file names; env `CLASSMIND_PROMPT_DIR`) |
 | `--coverage-threshold 0.7` | Transcript-coverage warning threshold |
 | `--fix-rounds N` | QA revision loop: after assembly, feed machine-fixable QA issues back to the LLM up to N rounds (default 0 = off; stage `fix`, see L4) |
+| `--work-dir <dir>` | Intermediate dir root with `run/<stem>/` (drafts/state) and `curated/<stem>/` (snapshots); default `<output 父目录>/work` or env `CLASSMIND_WORK_DIR` |
 | `-v / --verbose` | More intermediate output |
 
 ### Course types
@@ -255,6 +265,7 @@ agent/AGENT.md              # agent definition (mirrored layout with paper-mind)
 WORKFLOW.md                 # stage detail + quality contract (mirrored layout)
 docs/ARCHITECTURE.md        # shared twin-repo architecture spec (kept in sync with paper-mind)
 config/.env(.example)      # local API keys (ignored) + tracked template — shared naming with paper-mind
+work/                       # intermediates: run/<stem>/ + curated/<stem>/ (gitignored, regenerable)
 input/                      # your lecture package (gitignored except meta.json)
 output/                     # generated note + assets + meta (gitignored)
 tests/                      # unittest suite (workspace-scoped temp dirs)

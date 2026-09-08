@@ -65,7 +65,7 @@ class TestSkillLoader(unittest.TestCase):
             skills_dir.mkdir()
             (skills_dir / "teacher.md").write_text("教师要求：结尾必须附知识图谱", encoding="utf-8")
             result = Pipeline(input_dir=Path(inp), output_dir=Path(out), engine="llm",
-                              llm_client=RecordingLLM()).run()
+                              llm_client=RecordingLLM(), work_dir=Path(out) / "work").run()
             self.assertTrue(result.product.layers, "应生成分层产物")
             self.assertTrue(prompts, "应产生至少一次 LLM 调用")
             self.assertTrue(any("教师要求：结尾必须附知识图谱" in p for p in prompts),

@@ -7,8 +7,9 @@ dist/
 .venv/
 venv/
 
-# ClassMind generated outputs (regenerable)
+# ClassMind generated outputs & intermediates (regenerable)
 output/
+work/
 output-demo/
 output-sample/
 input-sample/

@@ -37,7 +37,14 @@ output/
     ├── alignment_map.json    # 页↔讲述对齐 + 覆盖率
     ├── highlights.json       # 教师重点
     └── qa_report.json        # QA 检查（COVERAGE/FIGURE/HEADINGS/SCAFFOLD/…）
+
+# 中间文件（与 paper-mind 同构；可再生产物，不入 git）
+work/
+├── run/<stem>/             # 本次运行：run_state/manifest、slides.md、transcript、
+│                           #   highlights/alignment.json、plan.json、draft/section_XX.md、note_draft.md
+└── curated/<stem>/         # 成功后的可复用快照（slides/transcript/alignment/plan/course_meta）
 ```
+`classmind cleanup` 清除 work/run（保留 curated 与 output/）；`classmind report` 查看状态。
 
 ## 四、质量契约
 

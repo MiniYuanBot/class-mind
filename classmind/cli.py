@@ -44,6 +44,10 @@ def main(argv: list | None = None) -> int:
             return _cmd_prompts(args)
         if args.cmd == "skills":
             return _cmd_skills(args)
+        if args.cmd == "cleanup":
+            return _cmd_cleanup(args)
+        if args.cmd == "report":
+            return _cmd_report(args)
         if args.cmd == "version":
             print(f"classmind {__version__}")
             return 0
@@ -90,13 +94,25 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--coverage-threshold", type=float, default=0.7, help="transcript coverage warning threshold (default 0.7)")
     g.add_argument("--fix-rounds", type=int, default=0,
                    help="QA revision loop: after assembly, feed machine-fixable QA issues back to the LLM up to N rounds (default 0 = off)")
+    g.add_argument("--work-dir", type=Path, default=None,
+                   help="intermediate dir root (run/ + curated/; default <output 父目录>/work or env CLASSMIND_WORK_DIR)")
     g.add_argument("--verbose", "-v", action="store_true", help="print more intermediate information")
 
     d = sub.add_parser("demo", help="generate a sample course package (optionally run the pipeline)")
     d.add_argument("--input-dir", type=Path, default=Path("input-sample"))
     d.add_argument("--output-dir", type=Path, default=Path("output-sample"))
     d.add_argument("--run", action="store_true", help="run LLM generation right after creating the sample package")
+    d.add_argument("--work-dir", type=Path, default=None, help="intermediate dir root (default <output 父目录>/work)")
     d.add_argument("--verbose", "-v", action="store_true")
+
+    w = sub.add_parser("cleanup", help="remove work/run intermediates (keep curated/ and output/)")
+    w.add_argument("--output-dir", type=Path, default=Path("output"), help="derive default work dir from this output dir")
+    w.add_argument("--work-dir", type=Path, default=None, help="intermediate dir root (default <output 父目录>/work)")
+
+    r = sub.add_parser("report", help="show input/output/work state")
+    r.add_argument("--input-dir", type=Path, default=Path("input"))
+    r.add_argument("--output-dir", type=Path, default=Path("output"))
+    r.add_argument("--work-dir", type=Path, default=None, help="intermediate dir root (default <output 父目录>/work)")
 
     p = sub.add_parser("prompts", help="prompt catalog / preview (Prompt Transparency)")
     p.add_argument("action", choices=["list", "show"])
@@ -153,6 +169,7 @@ def _cmd_generate(args) -> int:
         captioner=captioner,
         skills=args.skills,
         fix_rounds=args.fix_rounds,
+        work_dir=args.work_dir,
     )
     result = pipeline.run()
     _print_summary(result, args)
@@ -179,9 +196,28 @@ def _cmd_demo(args) -> int:
         captioner=captioner,
         coverage_threshold=0.7,
         verbose=args.verbose,
+        work_dir=args.work_dir,
     )
     result = pipeline.run()
     _print_summary(result, args)
+    return 0
+
+
+def _cmd_cleanup(args) -> int:
+    from classmind import workdir as wd
+    from classmind.pipeline import Pipeline
+
+    work_dir = Path(args.work_dir) if args.work_dir else wd.default_work_dir(args.output_dir)
+    Pipeline(input_dir=args.output_dir, output_dir=args.output_dir, work_dir=work_dir).cleanup()
+    return 0
+
+
+def _cmd_report(args) -> int:
+    from classmind import workdir as wd
+    from classmind.pipeline import Pipeline
+
+    work_dir = Path(args.work_dir) if args.work_dir else wd.default_work_dir(args.output_dir)
+    Pipeline(input_dir=args.input_dir, output_dir=args.output_dir, work_dir=work_dir).report()
     return 0
 
 

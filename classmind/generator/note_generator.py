@@ -195,6 +195,11 @@ def _english_note_stem(meta: CourseMeta) -> str:
     return stem or "course-notes"
 
 
+def english_note_stem(meta: CourseMeta) -> str:
+    """公开别名：供 pipeline/workdir 计算中间目录 stem（与最终文件名一致）。"""
+    return _english_note_stem(meta)
+
+
 def _sanitize_stem(stem: str) -> str:
     s = re.sub(r"[^A-Za-z0-9]+", "-", str(stem)).strip("-").lower()
     return re.sub(r"-{2,}", "-", s)[:120].strip("-")

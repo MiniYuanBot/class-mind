@@ -86,7 +86,7 @@ class TestPipelineEndToEnd(unittest.TestCase):
 
         with TempInput() as inp, workspace_tempdir("classmind_out_") as out_tmp:
             result = Pipeline(input_dir=Path(inp), output_dir=Path(out_tmp), engine="llm",
-                              llm_client=FakeLLM()).run()
+                              llm_client=FakeLLM(), work_dir=Path(out_tmp) / "work").run()
             self.assertEqual(result.product.mode, "layered_md")
             self.assertIn("plan", result.product.layers)
             note = Path(result.outputs["note_path"])
@@ -123,7 +123,8 @@ class TestPipelineEndToEnd(unittest.TestCase):
 
         with TempInput() as inp, workspace_tempdir("classmind_out_") as out_tmp:
             with self.assertRaisesRegex(LLMError, "API Key"):
-                Pipeline(input_dir=Path(inp), output_dir=Path(out_tmp)).run()
+                Pipeline(input_dir=Path(inp), output_dir=Path(out_tmp),
+                         work_dir=Path(out_tmp) / "work").run()
 
 
 if __name__ == "__main__":
